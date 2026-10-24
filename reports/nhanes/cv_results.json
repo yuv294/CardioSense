@@ -1,0 +1,101 @@
+{
+  "logreg": {
+    "setting": {
+      "C": 0.003,
+      "l1_ratio": 0.0
+    },
+    "cv_logloss": 0.11113656431615213,
+    "cv_auroc": 0.8074194759730113,
+    "train_auroc": 0.8219186462030453,
+    "platt": [
+      0.4466296126712148,
+      1.147233194592524
+    ],
+    "n_settings_tried": 10
+  },
+  "rf": {
+    "setting": {
+      "min_samples_leaf": 160,
+      "max_features": 0.2
+    },
+    "cv_logloss": 0.1113749989665289,
+    "cv_auroc": 0.8008264387726672,
+    "train_auroc": 0.8637832665075769,
+    "platt": [
+      0.5232952456584395,
+      1.1740348891117462
+    ],
+    "n_settings_tried": 12
+  },
+  "gbm": {
+    "setting": {
+      "num_leaves": 7,
+      "learning_rate": 0.01,
+      "n_estimators": 300,
+      "min_child_samples": 80,
+      "reg_lambda": 20.0,
+      "colsample_bytree": 0.6
+    },
+    "cv_logloss": 0.11107013964608707,
+    "cv_auroc": 0.8031631194505349,
+    "train_auroc": 0.8491649304083437,
+    "platt": [
+      0.8004971419609334,
+      1.2395121866114382
+    ],
+    "n_settings_tried": 16
+  },
+  "mlp": {
+    "setting": {
+      "alpha": 1.0,
+      "hidden": [
+        16
+      ]
+    },
+    "cv_logloss": 0.11787504911714759,
+    "cv_auroc": 0.7443127445398713,
+    "train_auroc": 0.8025368551112619,
+    "platt": [
+      0.09871524755179606,
+      1.363471160595811
+    ],
+    "n_settings_tried": 12
+  },
+  "refit": {
+    "setting": {
+      "C": 1.0
+    },
+    "cv_logloss": 0.11488396584089562,
+    "cv_auroc": 0.7727786997444066,
+    "train_auroc": 0.7834794011120128,
+    "platt": [
+      -0.14386461336301265,
+      0.9518810343160434
+    ],
+    "n_settings_tried": 1
+  },
+  "ensemble": {
+    "cv_logloss": 0.11071959804196603,
+    "cv_auroc": 0.8043880900754666,
+    "train_auroc": 0.8508951824888253
+  },
+  "pce": {
+    "cv_auroc": 0.7841568446937118,
+    "cv_logloss": 0.16253163497308692,
+    "platt": [
+      -1.6926949613965434,
+      0.8979178819630138
+    ],
+    "rows": 10962
+  },
+  "frs_best": {
+    "cv_auroc": 0.7673597567623224,
+    "cv_logloss": 0.21202801508670885,
+    "platt": [
+      -2.1511034220397747,
+      0.8716011078910098
+    ],
+    "rows": 10962
+  },
+  "_served": "ensemble"
+}

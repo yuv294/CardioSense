@@ -1,68 +1,97 @@
 """CardioSense Flask API.
 
-Endpoints:
-    GET  /api/health      -> liveness
-    GET  /api/schema      -> the input fields the form should render
-    POST /api/predict     -> {feature: value, ...} -> risk result
-    GET  /api/metrics      -> the honest test-set metrics for the About page
+Endpoints (model = framingham | nhanes):
+    GET  /api/health                     liveness + loaded models
+    GET  /api/models                     the calculators on offer, with headline results
+    GET  /api/schema?model=              the form for one calculator
+    POST /api/predict?model=&mode=       {input: value} -> risk, explanation, what-if, published scores
+    POST /api/batch?model=               {"records": [...]} -> one risk per record (clinician CSV upload)
+    GET  /api/evidence?model=            evaluation, nested CV, ablation, CV and data reports
 
-Run locally:  python app.py   (serves on http://127.0.0.1:5000)
+Run locally:  python app.py   (http://127.0.0.1:5000)
 Production:   gunicorn app:app
+If frontend/dist exists (npm run build), it is served from / as well, so one
+process runs the whole app.
 """
-import json
+import os
 from pathlib import Path
-from flask import Flask, request, jsonify
+
+from flask import Flask, jsonify, request, send_from_directory
 
 from cardiosense_api.services import model_service as svc
 
-app = Flask(__name__)
+DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+app = Flask(__name__, static_folder=None)
+MAX_BATCH = 5000
 
-# CORS: the frontend is served from a different origin in dev (Vite :5173) and
-# on free-tier hosting (Netlify/Vercel front, Render/Railway back). We enable it
-# with a tiny after_request hook so the backend needs no extra dependency. If
-# flask-cors is installed it would do the same job; this keeps the app runnable
-# and the deploy image smaller.
+
 @app.after_request
 def _cors(resp):
-    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Origin"] = os.environ.get("CORS_ORIGIN", "*")
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return resp
 
-REPORTS = Path(__file__).resolve().parent.parent / "reports"
+
+def _model():
+    return svc.get(request.args.get("model", "framingham"))
+
+
+@app.errorhandler(KeyError)
+def _unknown(e):
+    return jsonify({"error": str(e).strip("'\"")}), 404
 
 
 @app.get("/api/health")
 def health():
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "models": list(svc.REGISTRY)})
+
+
+@app.get("/api/models")
+def models():
+    return jsonify([m.info() for m in svc.REGISTRY.values()])
 
 
 @app.get("/api/schema")
 def schema():
-    return jsonify(svc.feature_schema())
+    return jsonify(_model().schema())
 
 
 @app.post("/api/predict")
 def predict():
-    payload = request.get_json(silent=True) or {}
-    # mode=clinician returns the richer breakdown; default is patient
+    m = _model()
     mode = request.args.get("mode", "patient")
-    if mode not in ("patient", "clinician"):
-        mode = "patient"
     try:
-        result = svc.predict(payload, mode=mode)
-    except Exception as e:  # never 500 on a bad field; tell the client what broke
-        return jsonify({"error": f"Could not score input: {e}"}), 400
-    return jsonify(result)
+        return jsonify(m.predict(request.get_json(silent=True) or {}, mode="clinician" if mode == "clinician" else "patient"))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
 
-@app.get("/api/metrics")
-def metrics():
-    path = REPORTS / "evaluation.json"
-    if not path.exists():
-        return jsonify({"error": "metrics not generated yet"}), 404
-    return jsonify(json.loads(path.read_text()))
+@app.post("/api/batch")
+def batch():
+    m = _model()
+    records = (request.get_json(silent=True) or {}).get("records", [])
+    if not isinstance(records, list) or not records:
+        return jsonify({"error": "Send {\"records\": [ {...}, ... ]}."}), 400
+    if len(records) > MAX_BATCH:
+        return jsonify({"error": f"At most {MAX_BATCH} rows per upload."}), 400
+    return jsonify({"results": m.predict_many(records)})
+
+
+@app.get("/api/evidence")
+def evidence():
+    return jsonify(_model().evidence())
+
+
+@app.get("/", defaults={"path": ""})
+@app.get("/<path:path>")
+def spa(path):
+    if not DIST.exists():
+        return jsonify({"error": "Frontend not built. Run `npm run build` in frontend/, or use the Vite dev server."}), 404
+    if path and (DIST / path).is_file():
+        return send_from_directory(DIST, path)
+    return send_from_directory(DIST, "index.html")
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    app.run(host="127.0.0.1", port=int(os.environ.get("PORT", 5000)), debug=False)

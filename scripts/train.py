@@ -1,117 +1,154 @@
-"""Step 3 of the pipeline: tune five models on the TRAINING set only.
+"""Step 2: tune, calibrate and fit every model on the TRAINING participants only.
 
-The models and their search grids live in model_specs.py (edit them there).
+    python train.py --cohort framingham|nhanes
 
-How each model is chosen
-------------------------
-1. GridSearchCV tries every combination in the grid with 5-fold stratified
-   cross-validation, scoring each by average precision (area under the
-   precision-recall curve), which respects the 15% class imbalance.
-2. Taking the single best score tends to pick the most flexible model that got
-   lucky in the folds. To resist that we apply the ONE-STANDARD-ERROR RULE
-   (Hastie, Tibshirani & Friedman, "The Elements of Statistical Learning",
-   section 7.10): among all settings whose cross-validated score is within one
-   standard error of the best, choose the SIMPLEST. Simpler settings overfit
-   less and cost almost nothing in CV score.
-3. The chosen setting is refitted on the whole training set.
-4. A stacked ensemble combines the four tuned models with a logistic
-   meta-learner trained on out-of-fold predictions.
+* Grouped, stratified 5-fold CV (all rows of a person stay in one fold).
+* Hyperparameters picked on CV log-loss (a proper scoring rule: it rewards
+  calibrated probabilities, not just ranking). The one-standard-error rule then
+  takes the most regularised setting statistically tied with the best, which
+  guards against over-tuning to CV noise (Hastie et al., ESL 7.10).
+* Each tuned model is refitted on all training rows and recalibrated (Platt)
+  on its own out-of-fold predictions.
+* The ensemble averages the four calibrated models (no fitted weights).
+* The served model is chosen on CV log-loss only; the test set is not opened.
 
-The locked test set is never touched here.
-
-Outputs (artifacts/)
-    model_{logreg,rf,hgb,mlp,stack}.joblib
-    cv_results.json  -- chosen settings, CV scores, train scores, and the
-                        setting the plain "best score" rule would have chosen
+fit_all() is also called inside every outer fold by nested_cv.py, so the
+nested estimate measures this exact procedure, tuning included.
 """
+import argparse
 import json
-import warnings
-import numpy as np
-import pandas as pd
+import os
+import time
+
 import joblib
+import numpy as np
+from joblib import Parallel, delayed
+import pandas as pd
 from sklearn.base import clone
-from sklearn.ensemble import StackingClassifier
-from sklearn.exceptions import ConvergenceWarning
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import StratifiedKFold, GridSearchCV, cross_val_score
+from sklearn.metrics import log_loss, roc_auc_score
+from sklearn.model_selection import StratifiedGroupKFold
 
-from config import DATA_PROCESSED, ARTIFACTS, RANDOM_STATE
-from model_specs import SPECS
+import cohorts
+from baselines import filled
+from calibration import Calibrated, MeanEnsemble, apply_platt, fit_platt
+from config import CV_FOLDS, GROUP, RANDOM_STATE, TARGET, dirs
+from models import BASE_MODELS, SPECS, sample_space, single_thread
 
-warnings.filterwarnings("ignore", category=ConvergenceWarning)
-
-CV = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
-SCORING = "average_precision"
-
-
-def load_train():
-    X = np.load(DATA_PROCESSED / "X_train_proc.npy")
-    y = pd.read_csv(DATA_PROCESSED / "y_train.csv").iloc[:, 0].to_numpy()
-    return X, y
-
-
-def tune(name, spec, X, y):
-    gs = GridSearchCV(spec["estimator"], spec["grid"], scoring=SCORING, cv=CV,
-                      n_jobs=-1, refit=False, return_train_score=True)
-    gs.fit(X, y)
-    r = gs.cv_results_
-    mean, std = r["mean_test_score"], r["std_test_score"]
-    best = int(np.argmax(mean))
-    se = std[best] / np.sqrt(CV.get_n_splits())
-    near_best = [i for i in range(len(mean)) if mean[i] >= mean[best] - se]
-    pick = min(near_best, key=lambda i: spec["complexity"](r["params"][i]))
-
-    model = clone(spec["estimator"]).set_params(**r["params"][pick]).fit(X, y)
-    info = {
-        "params": {k: (list(v) if isinstance(v, tuple) else v) for k, v in r["params"][pick].items()},
-        "cv_average_precision": float(mean[pick]),
-        "train_average_precision": float(r["mean_train_score"][pick]),
-        "one_se": float(se),
-        "settings_within_one_se": len(near_best),
-        "settings_tried": len(mean),
-        "best_score_rule_params": {k: (list(v) if isinstance(v, tuple) else v)
-                                   for k, v in r["params"][best].items()},
-        "best_score_rule_cv_ap": float(mean[best]),
-    }
-    print(f"  {name:7s} chose {info['params']}")
-    print(f"          CV AP {mean[pick]:.4f}  (best possible {mean[best]:.4f}, "
-          f"1 SE = {se:.4f}); train AP {info['train_average_precision']:.4f}; "
-          f"{len(near_best)} of {len(mean)} settings within 1 SE")
-    return model, info
+N_SETTINGS = {"logreg": 10, "rf": 12, "gbm": 16, "mlp": 12, "refit": 1}
+# higher = more regularised; used by the one-standard-error rule
+SIMPLICITY = {
+    "logreg": lambda s: -s["C"],
+    "rf": lambda s: s["min_samples_leaf"],
+    "gbm": lambda s: -s["num_leaves"] * s["n_estimators"] * s["learning_rate"] + s["reg_lambda"],
+    "mlp": lambda s: s["alpha"] - sum(s["hidden"]) / 100,
+    "refit": lambda s: 0,
+}
 
 
-def main():
-    X, y = load_train()
-    print(f"Training on {len(y)} rows, {y.mean():.1%} positive\n")
+def folds(X, y, groups, seed=RANDOM_STATE):
+    return list(StratifiedGroupKFold(CV_FOLDS, shuffle=True, random_state=seed).split(X, y, groups))
 
-    models, results = {}, {}
-    for name, spec in SPECS.items():
-        models[name], results[name] = tune(name, spec, X, y)
 
-    # --- stacking ensemble --------------------------------------------------
-    # The meta-learner trains on the base models' out-of-fold predictions, so a
-    # base model never feeds it a prediction for rows it was trained on.
-    stack = StackingClassifier(
-        estimators=[(n, models[n]) for n in ("logreg", "rf", "hgb", "mlp")],
-        final_estimator=LogisticRegression(max_iter=2000, class_weight="balanced",
-                                           random_state=RANDOM_STATE),
-        stack_method="predict_proba", cv=CV, n_jobs=1, passthrough=False,
-    )
-    stack_cv = cross_val_score(stack, X, y, scoring=SCORING, cv=CV, n_jobs=1)
-    stack.fit(X, y)
-    models["stack"] = stack
-    results["stack"] = {"params": "stacking(logreg,rf,hgb,mlp) -> logreg meta",
-                        "cv_average_precision": float(stack_cv.mean())}
-    print(f"  stack   CV AP {stack_cv.mean():.4f}")
+N_JOBS = int(os.environ.get("CS_JOBS", max(1, (os.cpu_count() or 2) - 2)))
 
-    for name, model in models.items():
-        joblib.dump(model, ARTIFACTS / f"model_{name}.joblib")
-    (ARTIFACTS / "cv_results.json").write_text(json.dumps(results, indent=2))
 
-    print("\nCV ranking (average precision):")
-    for name, r in sorted(results.items(), key=lambda kv: -kv[1]["cv_average_precision"]):
-        print(f"  {name:7s} {r['cv_average_precision']:.4f}")
+def _fit_fold(est, X, y, tr, va):
+    return va, clone(est).fit(X.iloc[tr], y[tr]).predict_proba(X.iloc[va])[:, 1]
+
+
+def oof_predict(est, X, y, splits):
+    oof, fold_losses = np.zeros(len(y)), []
+    for tr, va in splits:
+        m = clone(est).fit(X.iloc[tr], y[tr])
+        oof[va] = m.predict_proba(X.iloc[va])[:, 1]
+        fold_losses.append(log_loss(y[va], oof[va], labels=[0, 1]))
+    return oof, np.array(fold_losses)
+
+
+def tune(c, name, X, y, splits, rng, verbose=True):
+    """Every (setting, fold) fit runs in parallel; models are single-threaded inside."""
+    spec, trials = SPECS[name], []
+    settings = sample_space(spec["space"], N_SETTINGS[name], rng)
+    t0 = time.time()
+    jobs = [(i, spec["make"](c, **s), tr, va) for i, s in enumerate(settings) for tr, va in splits]
+    out = Parallel(n_jobs=N_JOBS)(delayed(_fit_fold)(single_thread(est), X, y, tr, va) for _, est, tr, va in jobs)
+    for i, s in enumerate(settings):
+        oof, fl = np.zeros(len(y)), []
+        for (j, _, _, _), (va, p) in zip(jobs, out):
+            if j == i:
+                oof[va] = p
+                fl.append(log_loss(y[va], p, labels=[0, 1]))
+        fl = np.array(fl)
+        trials.append({"setting": s, "logloss": fl.mean(), "se": fl.std(ddof=1) / np.sqrt(len(fl)),
+                       "auroc": roc_auc_score(y, oof), "oof": oof})
+        if verbose:
+            print(f"  {name:7s} {s}  logloss={fl.mean():.4f}  auroc={trials[-1]['auroc']:.4f}", flush=True)
+    if verbose:
+        print(f"  ({len(jobs)} fits in {time.time() - t0:.0f}s)", flush=True)
+    best = min(trials, key=lambda t: t["logloss"])
+    ok = [t for t in trials if t["logloss"] <= best["logloss"] + best["se"]]
+    return max(ok, key=lambda t: SIMPLICITY[name](t["setting"])), trials
+
+
+def fit_all(c, df, verbose=True):
+    """Tune + calibrate + refit every model on df. Returns (fitted, results, oof_calibrated)."""
+    X, y = c.add_features(df), df[TARGET].to_numpy()
+    splits = folds(X, y, df[GROUP].to_numpy())
+    rng = np.random.default_rng(RANDOM_STATE)
+    fitted, results, oof_cal = {}, {}, {}
+    for name in BASE_MODELS + ["refit"]:
+        if verbose:
+            print(f"\n== {name}")
+        chosen, trials = tune(c, name, X, y, splits, rng, verbose)
+        a, b = fit_platt(chosen["oof"], y)
+        cal = np.zeros(len(y))               # honest CV estimate: Platt map refitted inside each fold
+        for tr, va in splits:
+            aa, bb = fit_platt(chosen["oof"][tr], y[tr])
+            cal[va] = apply_platt(chosen["oof"][va], aa, bb)
+        oof_cal[name] = cal
+        fitted[name] = Calibrated(SPECS[name]["make"](c, **chosen["setting"]).fit(X, y), a, b)
+        results[name] = {"setting": {k: list(v) if isinstance(v, tuple) else v for k, v in chosen["setting"].items()},
+                         "cv_logloss": float(log_loss(y, cal)), "cv_auroc": float(roc_auc_score(y, cal)),
+                         "train_auroc": float(roc_auc_score(y, fitted[name].predict_proba(X)[:, 1])),
+                         "platt": [a, b], "n_settings_tried": len(trials)}
+        if verbose:
+            r = results[name]
+            print(f"  -> {chosen['setting']}  CV auroc={r['cv_auroc']:.4f}  train auroc={r['train_auroc']:.4f}", flush=True)
+
+    oof_cal["ensemble"] = np.mean([oof_cal[m] for m in BASE_MODELS], axis=0)
+    fitted["ensemble"] = MeanEnsemble({m: fitted[m] for m in BASE_MODELS})
+    results["ensemble"] = {"cv_logloss": float(log_loss(y, oof_cal["ensemble"])),
+                           "cv_auroc": float(roc_auc_score(y, oof_cal["ensemble"])),
+                           "train_auroc": float(roc_auc_score(y, fitted["ensemble"].predict_proba(X)[:, 1]))}
+
+    # published equations on the same rows (fixed formulas) and their recalibrated versions
+    Xf = filled(X)
+    for bname, fn in c.BASELINES.items():
+        p = fn(Xf)
+        ok = ~np.isnan(p)
+        a, b = fit_platt(p[ok], y[ok])
+        results[bname] = {"cv_auroc": float(roc_auc_score(y[ok], p[ok])), "cv_logloss": float(log_loss(y[ok], p[ok])),
+                          "platt": [a, b], "rows": int(ok.sum())}
+        oof_cal[bname] = p
+    served = min(BASE_MODELS + ["ensemble"], key=lambda m: results[m]["cv_logloss"])
+    results["_served"] = served
+    return fitted, results, oof_cal
+
+
+def main(name):
+    c, out = cohorts.get(name), dirs(name)
+    df = pd.read_csv(out["data"] / "train.csv")
+    fitted, results, oof = fit_all(c, df)
+    print(f"\nServed model (lowest CV log-loss): {results['_served']}")
+    for k, v in results.items():
+        if isinstance(v, dict):
+            print(f"  {k:10s} CV auroc={v['cv_auroc']:.4f}  CV logloss={v['cv_logloss']:.4f}")
+    joblib.dump(fitted, out["art"] / "models.joblib")
+    pd.DataFrame({GROUP: df[GROUP], "y": df[TARGET], **oof}).to_csv(out["art"] / "oof_predictions.csv", index=False)
+    (out["rep"] / "cv_results.json").write_text(json.dumps(results, indent=2))
 
 
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--cohort", required=True)
+    main(ap.parse_args().cohort)

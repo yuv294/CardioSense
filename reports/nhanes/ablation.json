@@ -1,0 +1,234 @@
+{
+  "gbm": {
+    "all inputs": {
+      "auroc": 0.8071358198167643,
+      "logloss": 0.11089728189666859
+    },
+    "without background": {
+      "auroc": 0.8055441150937378,
+      "d_auroc": -0.001591704723026388,
+      "d_auroc_per_repeat": [
+        -0.0011,
+        -0.0028,
+        -0.0009
+      ],
+      "d_logloss": 0.00028050891155934526
+    },
+    "without blood pressure": {
+      "auroc": 0.7977337791075633,
+      "d_auroc": -0.009402040709200957,
+      "d_auroc_per_repeat": [
+        -0.0087,
+        -0.0136,
+        -0.0058
+      ],
+      "d_logloss": 0.0010034107399095281
+    },
+    "without blood sugar": {
+      "auroc": 0.8061312126754934,
+      "d_auroc": -0.001004607141270819,
+      "d_auroc_per_repeat": [
+        -0.0015,
+        -0.0007,
+        -0.0008
+      ],
+      "d_logloss": 9.963406124504266e-05
+    },
+    "without body weight": {
+      "auroc": 0.8016287516302657,
+      "d_auroc": -0.00550706818649845,
+      "d_auroc_per_repeat": [
+        -0.0034,
+        -0.0069,
+        -0.0062
+      ],
+      "d_logloss": 0.0010090215322990463
+    },
+    "without cholesterol": {
+      "auroc": 0.8035126928559025,
+      "d_auroc": -0.0036231269608615335,
+      "d_auroc_per_repeat": [
+        -0.0026,
+        -0.0056,
+        -0.0027
+      ],
+      "d_logloss": 0.0008048181265722562
+    },
+    "without family history": {
+      "auroc": 0.8071836678658962,
+      "d_auroc": 4.784804913212278e-05,
+      "d_auroc_per_repeat": [
+        -0.0001,
+        0.0006,
+        -0.0004
+      ],
+      "d_logloss": 2.6137047225210004e-05
+    },
+    "without inflammation": {
+      "auroc": 0.8005449024666982,
+      "d_auroc": -0.006590917350066006,
+      "d_auroc_per_repeat": [
+        -0.0067,
+        -0.0075,
+        -0.0056
+      ],
+      "d_logloss": 0.000860283522471352
+    },
+    "without kidney health": {
+      "auroc": 0.8022619811918807,
+      "d_auroc": -0.004873838624883405,
+      "d_auroc_per_repeat": [
+        -0.0051,
+        -0.004,
+        -0.0055
+      ],
+      "d_logloss": 0.0009510031283091422
+    },
+    "without smoking": {
+      "auroc": 0.8010778933937391,
+      "d_auroc": -0.006057926423025124,
+      "d_auroc_per_repeat": [
+        -0.0055,
+        -0.005,
+        -0.0077
+      ],
+      "d_logloss": 0.0004455918047652589
+    },
+    "without social factors": {
+      "auroc": 0.8027598431714574,
+      "d_auroc": -0.004375976645306682,
+      "d_auroc_per_repeat": [
+        -0.0047,
+        -0.0045,
+        -0.0039
+      ],
+      "d_logloss": 0.0003690292128463585
+    },
+    "published inputs only": {
+      "auroc": 0.7761270537311383,
+      "d_auroc": -0.031008766085625823,
+      "d_auroc_per_repeat": [
+        -0.0309,
+        -0.0307,
+        -0.0315
+      ],
+      "d_logloss": 0.004332105057462551
+    }
+  },
+  "logreg": {
+    "all inputs": {
+      "auroc": 0.8038130049786197,
+      "logloss": 0.11090984108747977
+    },
+    "without background": {
+      "auroc": 0.8043041036263573,
+      "d_auroc": 0.0004910986477374794,
+      "d_auroc_per_repeat": [
+        0.0027,
+        -0.0008,
+        -0.0004
+      ],
+      "d_logloss": 9.456575865575412e-05
+    },
+    "without blood pressure": {
+      "auroc": 0.802037478952915,
+      "d_auroc": -0.0017755260257046694,
+      "d_auroc_per_repeat": [
+        -0.0014,
+        -0.0007,
+        -0.0032
+      ],
+      "d_logloss": -0.00015111475160352328
+    },
+    "without blood sugar": {
+      "auroc": 0.803299698375589,
+      "d_auroc": -0.0005133066030306536,
+      "d_auroc_per_repeat": [
+        -0.0003,
+        -0.0008,
+        -0.0004
+      ],
+      "d_logloss": 0.00011650014810187885
+    },
+    "without body weight": {
+      "auroc": 0.8025571451067798,
+      "d_auroc": -0.0012558598718398855,
+      "d_auroc_per_repeat": [
+        -0.0012,
+        -0.0013,
+        -0.0014
+      ],
+      "d_logloss": 0.0004513220872951612
+    },
+    "without cholesterol": {
+      "auroc": 0.8040439677136707,
+      "d_auroc": 0.00023096273505103979,
+      "d_auroc_per_repeat": [
+        0.0001,
+        0.0005,
+        0.0
+      ],
+      "d_logloss": -5.436520553597316e-05
+    },
+    "without family history": {
+      "auroc": 0.8050791612660958,
+      "d_auroc": 0.0012661562874760242,
+      "d_auroc_per_repeat": [
+        0.0018,
+        0.0012,
+        0.0008
+      ],
+      "d_logloss": -9.704303578002745e-05
+    },
+    "without inflammation": {
+      "auroc": 0.8032689100739323,
+      "d_auroc": -0.0005440949046875051,
+      "d_auroc_per_repeat": [
+        -0.0003,
+        -0.0003,
+        -0.001
+      ],
+      "d_logloss": 3.289408992307915e-05
+    },
+    "without kidney health": {
+      "auroc": 0.7939547926786427,
+      "d_auroc": -0.00985821229997704,
+      "d_auroc_per_repeat": [
+        -0.0097,
+        -0.0096,
+        -0.0103
+      ],
+      "d_logloss": 0.0011677147416417112
+    },
+    "without smoking": {
+      "auroc": 0.797588720781397,
+      "d_auroc": -0.0062242841972228,
+      "d_auroc_per_repeat": [
+        -0.0069,
+        -0.0057,
+        -0.0061
+      ],
+      "d_logloss": 0.0006283302711272328
+    },
+    "without social factors": {
+      "auroc": 0.7995944019801421,
+      "d_auroc": -0.004218602998477687,
+      "d_auroc_per_repeat": [
+        -0.0038,
+        -0.0043,
+        -0.0045
+      ],
+      "d_logloss": 0.0004935788818008444
+    },
+    "published inputs only": {
+      "auroc": 0.7828678747794348,
+      "d_auroc": -0.02094513019918509,
+      "d_auroc_per_repeat": [
+        -0.0198,
+        -0.0208,
+        -0.0223
+      ],
+      "d_logloss": 0.0027122634725275374
+    }
+  }
+}

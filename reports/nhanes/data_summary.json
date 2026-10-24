@@ -1,0 +1,66 @@
+{
+  "participants_all_ages": 62160,
+  "aged_40_79": 18447,
+  "eligible_for_mortality_linkage_and_examined": 17629,
+  "no_prior_cvd": 15087,
+  "core_inputs_known": 13724,
+  "competing_deaths_labelled_0": 1197,
+  "dropped_alive_with_under_9y_followup": 22,
+  "by_cycle": {
+    "1999": {
+      "rows": 1967,
+      "event_rate": 0.0351
+    },
+    "2001": {
+      "rows": 2179,
+      "event_rate": 0.0307
+    },
+    "2003": {
+      "rows": 1981,
+      "event_rate": 0.0278
+    },
+    "2005": {
+      "rows": 2020,
+      "event_rate": 0.0282
+    },
+    "2007": {
+      "rows": 2711,
+      "event_rate": 0.028
+    },
+    "2009": {
+      "rows": 2844,
+      "event_rate": 0.0222
+    }
+  },
+  "all": {
+    "rows": 13702,
+    "participants": 13702,
+    "events": 387,
+    "event_rate": 0.0282
+  },
+  "train": {
+    "rows": 10962,
+    "participants": 10962,
+    "events": 310,
+    "event_rate": 0.0283
+  },
+  "test": {
+    "rows": 2740,
+    "participants": 2740,
+    "events": 77,
+    "event_rate": 0.0281
+  },
+  "missing_share": {
+    "education": 0.0011,
+    "pir": 0.0826,
+    "cigsPerDay": 0.01,
+    "famHistory": 0.4615,
+    "diaBP": 0.0047,
+    "BMI": 0.0126,
+    "waist": 0.024,
+    "HbA1c": 0.0018,
+    "eGFR": 0.0025,
+    "uacr": 0.0078,
+    "crp": 0.0004
+  }
+}

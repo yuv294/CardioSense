@@ -1,83 +1,73 @@
-import { useState } from "react";
-import { BAND } from "../../lib/ui.js";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../lib/api.js";
 import { saveRecord } from "../../lib/storage.js";
 import { generateReport } from "../../lib/report.js";
 import { useAuth } from "../../lib/useAuth.jsx";
 import RiskForm from "../../components/RiskForm.jsx";
-import RiskMeter from "../../components/RiskMeter.jsx";
+import ResultCard from "../../components/ResultCard.jsx";
 import Contributions from "../../components/Contributions.jsx";
-import PopulationCompare from "../../components/PopulationCompare.jsx";
+import WhatIf from "../../components/WhatIf.jsx";
+import ModelSwitch from "../../components/ModelSwitch.jsx";
 
-function Panel({ title, children }) {
+export function Panel({ title, sub, children, className = "" }) {
   return (
-    <section className="rounded-2xl bg-surface p-6 shadow-[0_1px_0_rgb(var(--fg)/0.06),0_12px_32px_-16px_rgb(var(--fg)/0.18)]">
-      <h2 className="mb-5 font-display text-xl font-bold tracking-tight">{title}</h2>
-      {children}
+    <section className={`rounded-2xl border border-fg/10 bg-surface p-6 ${className}`}>
+      <h2 className="font-display text-xl font-bold tracking-tight">{title}</h2>
+      {sub && <p className="mt-1 text-sm text-fg/55">{sub}</p>}
+      <div className="mt-5">{children}</div>
     </section>
   );
 }
 
 export default function PatientAssess() {
   const { user } = useAuth();
+  const [model, setModel] = useState("framingham");
   const [result, setResult] = useState(null);
   const [inputs, setInputs] = useState(null);
   const [schema, setSchema] = useState(null);
+  const below = useRef(null);
+
+  useEffect(() => { setResult(null); api.schema(model).then(setSchema).catch(() => {}); }, [model]);
 
   function onResult(res, form) {
     setResult(res); setInputs(form);
-    saveRecord(user, { at: new Date().toISOString(), inputs: form, result: res });
-    if (!schema) api.schema().then(setSchema).catch(() => {});
+    saveRecord(user, { at: new Date().toISOString(), model, inputs: form,
+                       result: { risk_percent: res.risk_percent, band: res.band, band_label: res.band_label, outcome: res.outcome } });
+    if (window.innerWidth < 1024) setTimeout(() => below.current?.scrollIntoView({ behavior: "smooth" }), 50);
   }
-
-  const band = result ? BAND[result.band] : null;
 
   return (
     <div className="space-y-10">
-      <h1 className="font-display text-4xl font-extrabold tracking-tight">Check your heart risk</h1>
+      <header className="space-y-5">
+        <h1 className="font-display text-4xl font-extrabold tracking-tight sm:text-5xl">Check your heart risk</h1>
+        <ModelSwitch value={model} onChange={setModel} />
+      </header>
 
-      <div className="grid items-start gap-10 lg:grid-cols-[1.15fr_1fr]">
-        <RiskForm mode="patient" onResult={onResult} submitLabel="Check my risk" />
-
-        <aside className="lg:sticky lg:top-8">
+      <div className="grid items-start gap-10 lg:grid-cols-[1.1fr_1fr]">
+        <RiskForm model={model} mode="patient" onResult={onResult} submitLabel="Show my risk" />
+        <aside ref={below} className="lg:sticky lg:top-8">
           {!result ? (
             <div className="rounded-2xl border-2 border-dashed border-fg/15 p-10 text-center text-fg/55">
-              Fill in the form to see your result.
+              Your result appears here. Nothing you enter leaves this device except to be scored.
             </div>
           ) : (
-            <section className="overflow-hidden rounded-2xl bg-surface shadow-[0_1px_0_rgb(var(--fg)/0.06),0_12px_32px_-16px_rgb(var(--fg)/0.18)]">
-              <div className="p-7">
-                <div className={`font-display text-8xl font-extrabold leading-none tracking-tight ${band.text}`}>
-                  {result.risk_percent}<span className="text-5xl">%</span>
-                </div>
-                <div className={`mt-3 font-display text-2xl font-bold ${band.text}`}>{band.label}</div>
-                <p className="mt-2 text-[15px] leading-relaxed text-fg/75">{band.meaning}</p>
-                <RiskMeter risk={result.risk} />
-                {result.assumed_fields.length > 0 && (
-                  <p className="rounded-lg bg-mid/10 px-3.5 py-2.5 text-sm text-fg/80">
-                    Typical values were used for: {result.assumed_fields.join(", ")}.
-                  </p>
-                )}
-              </div>
-              <button onClick={() => schema && generateReport({ result, inputs, schema, name: user.name })}
-                      disabled={!schema}
-                      className="w-full border-t border-fg/10 bg-fg/[0.03] py-4 text-sm font-semibold text-accent transition hover:bg-fg/[0.06] disabled:opacity-50">
-                Download report (PDF)
+            <ResultCard result={result} footer={
+              <button onClick={() => generateReport({ result, inputs, schema, name: user.name })}
+                      className="w-full border-t border-fg/10 bg-fg/[0.03] py-4 text-sm font-semibold text-accent transition hover:bg-fg/[0.06]">
+                Download report for your doctor (PDF)
               </button>
-            </section>
+            } />
           )}
         </aside>
       </div>
 
       {result && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Panel title="What drove your result">
-            <Contributions items={result.top_factors.map((f) => ({
-              ...f, contribution: f.direction === "increases" ? f.weight : -f.weight,
-            }))} />
+        <div className="grid gap-6 lg:grid-cols-[1fr_1.4fr]">
+          <Panel title="What's driving it" sub="Compared with a typical person in the study.">
+            <Contributions items={result.factors} />
           </Panel>
-          <Panel title="How you compare">
-            <PopulationCompare population={result.population} riskPercentile={result.risk_percentile} />
+          <Panel title="What could change it" sub="Your modifiable risk factors.">
+            <WhatIf model={model} result={result} inputs={inputs} schema={schema} />
           </Panel>
         </div>
       )}

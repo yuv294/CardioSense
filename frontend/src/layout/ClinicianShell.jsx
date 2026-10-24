@@ -5,8 +5,10 @@ import { Wordmark } from "../components/Ecg.jsx";
 
 const NAV = [
   { to: "/clinician", label: "Assess patient", end: true },
+  { to: "/clinician/batch", label: "Batch scoring" },
   { to: "/clinician/records", label: "Patient records" },
-  { to: "/clinician/performance", label: "Model performance" },
+  { to: "/clinician/evidence", label: "Evidence" },
+  { to: "/clinician/method", label: "Method" },
 ];
 
 export default function ClinicianShell() {
@@ -24,6 +26,8 @@ export default function ClinicianShell() {
               {n.label}
             </NavLink>
           ))}
+          <button onClick={() => { endSession(); setUser(null); }}
+                  className="whitespace-nowrap rounded-lg px-3 py-2.5 text-sm font-medium text-accent md:hidden">Sign out</button>
         </nav>
         <div className="hidden border-t border-fg/10 p-5 text-sm md:block">
           <div className="font-medium">{user.name}</div>

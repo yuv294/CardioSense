@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
 import { loadRecords, removeRecord } from "../../lib/storage.js";
 import { useAuth } from "../../lib/useAuth.jsx";
-import { BAND } from "../../lib/ui.js";
+import { BAND, CALCULATORS } from "../../lib/ui.js";
 
 function toCsv(rows) {
-  const head = ["date", "patient", "age", "sex", "systolic", "diastolic", "risk_percent", "band", "flagged"];
+  const head = ["date", "patient", "calculator", "outcome", "age", "sex", "systolic", "diastolic", "risk_percent", "band"];
   const lines = rows.map((r) => [
-    r.at, `"${(r.patient || "").replace(/"/g, '""')}"`, r.inputs.age, r.inputs.male ? "M" : "F",
-    r.inputs.sysBP, r.inputs.diaBP, r.result.risk_percent, r.result.band, r.result.flagged_high_risk ? "yes" : "no",
+    r.at, `"${(r.patient || "").replace(/"/g, '""')}"`, r.model || "framingham", `"${r.result.outcome || ""}"`,
+    r.inputs.age, r.inputs.male ? "M" : "F", r.inputs.sysBP, r.inputs.diaBP, r.result.risk_percent, r.result.band,
   ].join(","));
   return [head.join(","), ...lines].join("\n");
 }
@@ -19,7 +19,7 @@ export default function Records() {
 
   // change vs the same patient's previous assessment (rows are newest first)
   const withChange = useMemo(() => rows.map((r, i) => {
-    const prev = rows.slice(i + 1).find((x) => x.patient === r.patient);
+    const prev = rows.slice(i + 1).find((x) => x.patient === r.patient && (x.model || "framingham") === (r.model || "framingham"));
     return { ...r, change: prev ? +(r.result.risk_percent - prev.result.risk_percent).toFixed(1) : null };
   }), [rows]);
 
@@ -58,23 +58,23 @@ export default function Records() {
           <table className="w-full text-left text-sm">
             <thead className="border-b border-fg/10 text-fg/55">
               <tr>
-                {["Date", "Patient", "Age / sex", "BP", "Risk", "Band", "Screen", "Change", ""].map((h) => (
+                {["Date", "Patient", "Calculator", "Age / sex", "BP", "Risk", "Band", "Change", ""].map((h) => (
                   <th key={h} className="px-4 py-3 font-medium">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-fg/10">
               {shown.map((r) => {
-                const b = BAND[r.result.band];
+                const b = BAND[r.result.band] || BAND.intermediate;
                 return (
                   <tr key={r.id} className="hover:bg-fg/[0.03]">
                     <td className="whitespace-nowrap px-4 py-3 text-fg/70">{new Date(r.at).toLocaleDateString()}</td>
                     <td className="px-4 py-3 font-medium">{r.patient}</td>
+                    <td className="px-4 py-3 text-fg/70">{CALCULATORS[r.model || "framingham"].short}</td>
                     <td className="px-4 py-3">{r.inputs.age} / {r.inputs.male ? "M" : "F"}</td>
                     <td className="px-4 py-3 tabular-nums">{r.inputs.sysBP}/{r.inputs.diaBP}</td>
                     <td className={`px-4 py-3 font-display text-lg font-bold tabular-nums ${b.text}`}>{r.result.risk_percent}%</td>
-                    <td className={`px-4 py-3 ${b.text}`}>{b.label}</td>
-                    <td className="px-4 py-3">{r.result.flagged_high_risk ? "Flagged" : "Clear"}</td>
+                    <td className={`px-4 py-3 ${b.text}`}>{r.result.band_label || r.result.band}</td>
                     <td className={`px-4 py-3 tabular-nums ${r.change == null ? "text-fg/35" : r.change > 0 ? "text-high" : r.change < 0 ? "text-low" : "text-fg/60"}`}>
                       {r.change == null ? "–" : `${r.change > 0 ? "+" : ""}${r.change} pt`}
                     </td>

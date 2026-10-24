@@ -1,188 +1,117 @@
-"""Step 4: open the locked test set ONCE and judge everything on it.
+"""Step 3: open the locked test set ONCE and judge everything on it.
 
-Produces the numbers that go in the report:
-  - AUROC and AUPRC for the 4 ML models AND the Framingham baseline
-  - Brier score (calibration quality) for each
-  - 95% bootstrap confidence intervals on AUROC (so we don't over-read a
-    0.01 gap as a real difference)
-  - a calibration curve for the best model, saved as JSON for the frontend
-  - a chosen operating threshold, picked on the TRAINING set via CV-style
-    out-of-fold predictions, never on the test set
-  - confusion matrix at that threshold
+    python evaluate.py --cohort framingham|nhanes
 
-It also calibrates the model chosen on cross-validation (isotonic) and saves it
-as the model the API will actually serve. No test-set number is used to choose it.
-
-Nothing here feeds back into training. This script only reads the locked set.
+Compares the tuned models with the published equation(s), raw and
+recalibrated on the training data, and with the published formula refitted.
+Writes reports/<cohort>/evaluation.json, used by the app's Evidence page.
 """
+import argparse
 import json
+
+import joblib
 import numpy as np
 import pandas as pd
-import joblib
-from sklearn.metrics import (roc_auc_score, average_precision_score, brier_score_loss,
-                             confusion_matrix, precision_score, recall_score, f1_score)
-from sklearn.calibration import CalibratedClassifierCV, calibration_curve
-from sklearn.model_selection import cross_val_predict, StratifiedKFold
 
-from config import DATA_PROCESSED, ARTIFACTS, REPORTS, RANDOM_STATE
-from baseline_frs import frs_risk_frame
-
-MODELS = ["logreg", "rf", "hgb", "mlp", "stack"]
-RNG = np.random.default_rng(RANDOM_STATE)
+import cohorts
+from baselines import filled
+from calibration import apply_platt
+from config import GROUP, TARGET, dirs
+from metrics import at_threshold, bootstrap, calibration_curve, net_benefit, point_metrics
+from models import BASE_MODELS, LABELS
 
 
-def bootstrap_auroc_ci(y, p, n=2000):
-    """95% percentile bootstrap CI for AUROC."""
-    idx = np.arange(len(y))
-    scores = []
-    for _ in range(n):
-        s = RNG.choice(idx, size=len(idx), replace=True)
-        if y[s].sum() == 0 or y[s].sum() == len(s):
+def age_band(a):
+    return pd.cut(a, [0, 50, 60, 70, 200], right=False, labels=["<50", "50-59", "60-69", "70+"]).astype(str)
+
+
+def predictions(c, fitted, cv, df):
+    X = c.add_features(df)
+    preds = {m: fitted[m].predict_proba(X)[:, 1] for m in BASE_MODELS + ["ensemble", "refit"]}
+    Xf = filled(X)
+    for b, fn in c.BASELINES.items():
+        p = fn(Xf)
+        if np.isnan(p).any():          # e.g. the lab-only Framingham score; reported on its own subset
             continue
-        scores.append(roc_auc_score(y[s], p[s]))
-    lo, hi = np.percentile(scores, [2.5, 97.5])
-    return float(lo), float(hi)
+        preds[b] = p
+        preds[f"{b}_recal"] = apply_platt(p, *cv[b]["platt"])
+    return preds
 
 
-def main():
-    X_tr = np.load(DATA_PROCESSED / "X_train_proc.npy")
-    X_te = np.load(DATA_PROCESSED / "X_test_proc.npy")
-    y_tr = pd.read_csv(DATA_PROCESSED / "y_train.csv").iloc[:, 0].to_numpy()
-    y_te = pd.read_csv(DATA_PROCESSED / "y_test.csv").iloc[:, 0].to_numpy()
+def main(name, n_boot):
+    c, out = cohorts.get(name), dirs(name)
+    test = pd.read_csv(out["data"] / "test.csv")
+    fitted = joblib.load(out["art"] / "models.joblib")
+    cv = json.loads((out["rep"] / "cv_results.json").read_text())
+    served, base = cv["_served"], c.PRIMARY_BASELINE
+    y, groups = test[TARGET].to_numpy(), test[GROUP].to_numpy()
+    preds = predictions(c, fitted, cv, test)
 
-    rows = []
-    probs = {}
+    rows = {m: point_metrics(y, p) for m, p in preds.items()}
+    pairs = [(served, base), (served, f"{base}_recal"), (served, "refit"), ("refit", base)]
+    pairs += [(m, base) for m in BASE_MODELS + ["ensemble"] if m != served]
+    boot_m, boot_d = bootstrap(y, preds, groups, pairs, n_boot=n_boot)
+    for m in rows:
+        rows[m].update(boot_m[m])
+        rows[m]["label"] = LABELS.get(m, LABELS.get(m.replace("_recal", ""), m) + (" (recalibrated)" if m.endswith("_recal") else ""))
 
-    # ----- ML models -----
-    for name in MODELS:
-        m = joblib.load(ARTIFACTS / f"model_{name}.joblib")
-        p = m.predict_proba(X_te)[:, 1]
-        probs[name] = p
-        lo, hi = bootstrap_auroc_ci(y_te, p)
-        rows.append({
-            "model": name,
-            "auroc": roc_auc_score(y_te, p),
-            "auroc_ci_low": lo, "auroc_ci_high": hi,
-            "auprc": average_precision_score(y_te, p),
-            "brier": brier_score_loss(y_te, p),
-        })
+    lo, hi = c.DCA_RANGE
+    ts = np.round(np.linspace(lo, hi, 40), 4)
+    dca = {"thresholds": ts.tolist(), "treat_all": net_benefit(y, np.ones_like(y, dtype=float), ts),
+           **{m: net_benefit(y, preds[m], ts) for m in (served, base, f"{base}_recal", "refit")}}
+    high = c.BANDS[-2][0]               # lower edge of the "high" band
+    decision = {m: at_threshold(y, preds[m], high) for m in (served, base, f"{base}_recal")}
 
-    # ----- Framingham rule-based baseline -----
-    X_te_raw = pd.read_csv(DATA_PROCESSED / "X_test.csv")
-    frs = frs_risk_frame(X_te_raw)
-    probs["framingham"] = frs
-    lo, hi = bootstrap_auroc_ci(y_te, frs)
-    rows.append({
-        "model": "framingham_baseline",
-        "auroc": roc_auc_score(y_te, frs),
-        "auroc_ci_low": lo, "auroc_ci_high": hi,
-        "auprc": average_precision_score(y_te, frs),
-        "brier": brier_score_loss(y_te, frs),
-    })
+    sub = pd.DataFrame({"sex": np.where(test["male"] == 1, "men", "women"), "age": age_band(test["age"])})
+    for s in c.STRATA:
+        sub[s] = test[s].astype(str)
+    if "race" in test:
+        sub["race"] = test["race"].map({3: "White", 4: "Black", 1: "Hispanic", 2: "Hispanic", 5: "Other"})
+    subgroups = []
+    for col in sub.columns:
+        for level, idx in sub.groupby(col).groups.items():
+            yy = y[idx]
+            if yy.sum() < 10 or yy.sum() == len(yy):
+                continue
+            subgroups.append({"by": col, "level": level, "n": int(len(idx)), "events": int(yy.sum()),
+                              **{f"auroc_{m}": point_metrics(yy, preds[m][idx])["auroc"] for m in (served, base)},
+                              **{f"eo_{m}": float(preds[m][idx].mean() / yy.mean()) for m in (served, base, f"{base}_recal")}})
 
-    results = pd.DataFrame(rows).sort_values("auroc", ascending=False).reset_index(drop=True)
-    print("\n=== Test-set performance (locked set, n={}) ===".format(len(y_te)))
-    print(results.to_string(index=False,
-          formatters={c: "{:.4f}".format for c in
-                      ["auroc","auroc_ci_low","auroc_ci_high","auprc","brier"]}))
+    extra = {}
+    if "frs_lab" in c.BASELINES:        # lab Framingham where HDL is known (exam 3)
+        X = c.add_features(test)
+        p_lab = c.BASELINES["frs_lab"](filled(X))
+        ok = ~np.isnan(p_lab)
+        extra["hdl_known_subset"] = {"n": int(ok.sum()), "events": int(y[ok].sum()),
+                                     "auroc_frs_lab": point_metrics(y[ok], p_lab[ok])["auroc"],
+                                     f"auroc_{served}": point_metrics(y[ok], preds[served][ok])["auroc"]}
 
-    # ----- choose the model to serve using TRAINING information only -----
-    # The test set must not influence any decision, so the served model is picked
-    # from the cross-validated average precision recorded in train.py.
-    # The same one-standard-error rule used inside train.py is applied across
-    # model families: take the SIMPLEST model whose CV score is within one
-    # standard error of the best. The app also needs exact per-patient
-    # explanations, which only a linear model gives, so a non-linear model must
-    # beat the linear one by MORE than that margin to be served.
-    cv_scores = json.loads((ARTIFACTS / "cv_results.json").read_text())
-    top_name = max(cv_scores, key=lambda m: cv_scores[m]["cv_average_precision"])
-    top = cv_scores[top_name]["cv_average_precision"]
-    # The stack has no standard error of its own (it is not tuned by a grid), so when it is the
-    # best model we use the average standard error of the tuned base models.
-    ses = [v["one_se"] for v in cv_scores.values() if "one_se" in v]
-    margin = cv_scores[top_name].get("one_se", float(np.mean(ses)) if ses else 0.005)
-    simplicity = ["logreg", "hgb", "rf", "mlp", "stack"]
-    best_ml = next(m for m in simplicity
-                   if cv_scores[m]["cv_average_precision"] >= top - margin)
-    print(f"\nBest CV model: {top_name} ({top:.4f}); one-SE margin {margin:.4f}")
-    print(f"Served model chosen on CV (not on test): {best_ml}")
-    base = joblib.load(ARTIFACTS / f"model_{best_ml}.joblib")
-
-    # The app shows a probability to a person, so the served model is always
-    # isotonic-calibrated (5-fold, TRAIN only). This is decided in advance; the
-    # test Brier scores below are reported, not used to choose.
-    calib = CalibratedClassifierCV(base, method="isotonic", cv=5)
-    calib.fit(X_tr, y_tr)
-    p_cal = calib.predict_proba(X_te)[:, 1]
-    brier_base = brier_score_loss(y_te, probs[best_ml])
-    brier_cal = brier_score_loss(y_te, p_cal)
-    print(f"  Brier uncalibrated: {brier_base:.4f}   calibrated: {brier_cal:.4f}")
-    served, served_p, served_tag = calib, p_cal, "calibrated"
-    joblib.dump(served, ARTIFACTS / "model_served.joblib")
-    print(f"  Serving the {served_tag} {best_ml}.")
-
-    # ----- choose operating threshold on TRAIN (out-of-fold), not on test ----
-    # Critical: the threshold must be chosen on the SAME probability scale the
-    # API serves. We serve `served` (possibly calibrated), so we derive the
-    # out-of-fold probabilities from a clone of `served`, not of `base` --
-    # otherwise calibration shifts the scale and the threshold means nothing.
-    from sklearn.base import clone
-    cv = StratifiedKFold(5, shuffle=True, random_state=RANDOM_STATE)
-    oof = cross_val_predict(clone(served), X_tr, y_tr, cv=cv,
-                            method="predict_proba")[:, 1]
-    # target: catch >=70% of future cases (sensitivity), accept the alarms that implies
-    target_sens = 0.70
-    thr_grid = np.linspace(0.01, 0.9, 400)
-    best_thr = 0.5
-    for t in thr_grid:
-        if recall_score(y_tr, (oof >= t).astype(int)) >= target_sens:
-            best_thr = t
-    print(f"\nThreshold picked on TRAIN for >= {target_sens:.0%} sensitivity: {best_thr:.3f}")
-
-    # apply that threshold to the test set
-    yhat = (served_p >= best_thr).astype(int)
-    cm = confusion_matrix(y_te, yhat)
-    tn, fp, fn, tp = cm.ravel()
-    print("Confusion matrix on test set at this threshold:")
-    print(f"  TN={tn}  FP={fp}")
-    print(f"  FN={fn}  TP={tp}")
-    print(f"  sensitivity/recall: {recall_score(y_te, yhat):.3f}")
-    print(f"  precision:          {precision_score(y_te, yhat):.3f}")
-    print(f"  specificity:        {tn/(tn+fp):.3f}")
-    print(f"  F1:                 {f1_score(y_te, yhat):.3f}")
-
-    # ----- calibration curve for the frontend -----
-    frac_pos, mean_pred = calibration_curve(y_te, served_p, n_bins=10, strategy="quantile")
-    calib_json = {"mean_predicted": mean_pred.tolist(),
-                  "fraction_positive": frac_pos.tolist()}
-
-    # ----- save report bundle -----
-    served_ci = bootstrap_auroc_ci(y_te, served_p)
     report = {
-        "n_test": int(len(y_te)),
-        "test_positive_rate": float(y_te.mean()),
-        "metrics": results.to_dict(orient="records"),
-        "served_model": {"base": best_ml, "variant": served_tag},
-        # the calibrated model the app actually serves (the row in "metrics" is the raw base model)
-        "served_metrics": {"auroc": float(roc_auc_score(y_te, served_p)),
-                           "auroc_ci_low": served_ci[0], "auroc_ci_high": served_ci[1],
-                           "auprc": float(average_precision_score(y_te, served_p)),
-                           "brier": float(brier_score_loss(y_te, served_p))},
-        "operating_threshold": float(best_thr),
-        "target_sensitivity": target_sens,
-        "confusion_at_threshold": {"tn": int(tn), "fp": int(fp),
-                                   "fn": int(fn), "tp": int(tp)},
-        "test_sensitivity": float(recall_score(y_te, yhat)),
-        "test_precision": float(precision_score(y_te, yhat)),
-        "test_specificity": float(tn / (tn + fp)),
-        "calibration_curve": calib_json,
+        "cohort": name, "title": c.TITLE, "outcome": c.OUTCOME, "source": c.SOURCE,
+        "n_test": int(len(y)), "participants_test": int(len(np.unique(groups))), "events_test": int(y.sum()),
+        "event_rate_test": float(y.mean()), "served_model": served, "primary_baseline": base,
+        "metrics": rows, "paired": boot_d, "decision_curve": dca, "at_high_risk_threshold": decision,
+        "calibration_curves": {m: calibration_curve(y, preds[m]) for m in (served, base, f"{base}_recal")},
+        "subgroups": subgroups, **extra, "n_bootstrap": n_boot,
+        "overfitting_check": {m: {"train_auroc": cv[m].get("train_auroc"), "cv_auroc": cv[m]["cv_auroc"],
+                                  "test_auroc": rows[m]["auroc"]} for m in BASE_MODELS + ["ensemble", "refit"]},
     }
-    (REPORTS / "evaluation.json").write_text(json.dumps(report, indent=2))
-    results.to_csv(REPORTS / "metrics_table.csv", index=False)
-    (ARTIFACTS / "operating_threshold.json").write_text(
-        json.dumps({"threshold": float(best_thr)}, indent=2))
-    print(f"\nSaved reports/evaluation.json and metrics_table.csv")
+    (out["rep"] / "evaluation.json").write_text(json.dumps(report, indent=2))
+
+    print(f"\n=== {c.TITLE}: locked test set, {len(y)} rows, {int(y.sum())} events ===")
+    print(f"{'model':16s} {'AUROC':>7s} {'95% CI':>15s} {'Brier':>7s} {'E/O':>5s} {'slope':>6s}")
+    for m, r in sorted(rows.items(), key=lambda kv: -kv[1]["auroc"]):
+        print(f"{m:16s} {r['auroc']:7.3f}  [{r['auroc_ci'][0]:.3f},{r['auroc_ci'][1]:.3f}] {r['brier']:7.4f} "
+              f"{r['expected_over_observed']:5.2f} {r['cal_slope']:6.2f}")
+    print()
+    for k, d in boot_d.items():
+        print(f"{k:28s} dAUROC={d['d_auroc']:+.3f} [{d['d_auroc_ci'][0]:+.3f},{d['d_auroc_ci'][1]:+.3f}] p={d['p_auroc']:.3f}"
+              f"   dBrier={d['d_brier']:+.4f} [{d['d_brier_ci'][0]:+.4f},{d['d_brier_ci'][1]:+.4f}]")
 
 
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--cohort", required=True)
+    ap.add_argument("--boot", type=int, default=2000)
+    a = ap.parse_args()
+    main(a.cohort, a.boot)
