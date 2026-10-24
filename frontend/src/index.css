@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Two skins share one component set: patients get a light, open surface,
+   clinicians get a dark, dense workstation. Components only use the tokens. */
+:root,
+[data-role="patient"] {
+  --canvas: 236 241 246;
+  --surface: 255 255 255;
+  --fg: 11 26 43;
+  --accent: 14 124 134;
+  --accent-fg: 255 255 255;
+  --low: 24 128 86;
+  --mid: 176 112 8;
+  --high: 208 44 64;
+}
+[data-role="clinician"] {
+  --canvas: 9 16 26;
+  --surface: 17 28 42;
+  --fg: 226 234 242;
+  --accent: 98 226 208;
+  --accent-fg: 6 18 26;
+  --low: 80 208 152;
+  --mid: 242 188 74;
+  --high: 255 110 124;
+}
+
+html, body, #root { min-height: 100%; }
+body { @apply bg-canvas text-fg font-sans antialiased; }
+[data-role] { @apply bg-canvas text-fg; }
+
+:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: 2px; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { -moz-appearance: textfield; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* The single orchestrated motion: the ECG trace drawing itself on the gate. */
+@keyframes trace {
+  from { stroke-dashoffset: 1; }
+  to   { stroke-dashoffset: 0; }
+}
+.ecg-line {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: trace 3.2s cubic-bezier(.5,0,.2,1) 0.2s forwards;
+}
+.ecg-glow { filter: drop-shadow(0 0 6px rgb(var(--accent) / .55)); }

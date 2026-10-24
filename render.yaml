@@ -1,0 +1,10 @@
+# Render Blueprint — lets you deploy the backend in one click from the repo.
+services:
+  - type: web
+    name: cardiosense-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    healthCheckPath: /api/health

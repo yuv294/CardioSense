@@ -1,0 +1,82 @@
+{
+  "logreg": {
+    "params": {
+      "C": 0.001
+    },
+    "cv_average_precision": 0.3574069945055903,
+    "train_average_precision": 0.35609260584326047,
+    "one_se": 0.020300919808985345,
+    "settings_within_one_se": 6,
+    "settings_tried": 6,
+    "best_score_rule_params": {
+      "C": 0.01
+    },
+    "best_score_rule_cv_ap": 0.36305249073060714
+  },
+  "rf": {
+    "params": {
+      "max_depth": 3,
+      "max_features": "sqrt",
+      "min_samples_leaf": 80
+    },
+    "cv_average_precision": 0.3359577544233828,
+    "train_average_precision": 0.3692610849967209,
+    "one_se": 0.0204903526158532,
+    "settings_within_one_se": 24,
+    "settings_tried": 24,
+    "best_score_rule_params": {
+      "max_depth": 5,
+      "max_features": "sqrt",
+      "min_samples_leaf": 20
+    },
+    "best_score_rule_cv_ap": 0.3472625624819107
+  },
+  "hgb": {
+    "params": {
+      "l2_regularization": 0.0,
+      "learning_rate": 0.03,
+      "max_depth": 2,
+      "max_leaf_nodes": 7,
+      "min_samples_leaf": 100
+    },
+    "cv_average_precision": 0.33883729600498247,
+    "train_average_precision": 0.39054421741294754,
+    "one_se": 0.02007286411466982,
+    "settings_within_one_se": 63,
+    "settings_tried": 72,
+    "best_score_rule_params": {
+      "l2_regularization": 0.0,
+      "learning_rate": 0.03,
+      "max_depth": 3,
+      "max_leaf_nodes": 15,
+      "min_samples_leaf": 50
+    },
+    "best_score_rule_cv_ap": 0.3575228226864762
+  },
+  "mlp": {
+    "params": {
+      "alpha": 1.0,
+      "hidden_layer_sizes": [
+        16
+      ],
+      "max_iter": 30
+    },
+    "cv_average_precision": 0.36627876928573544,
+    "train_average_precision": 0.3994282204947569,
+    "one_se": 0.025576921184286377,
+    "settings_within_one_se": 10,
+    "settings_tried": 18,
+    "best_score_rule_params": {
+      "alpha": 0.1,
+      "hidden_layer_sizes": [
+        16
+      ],
+      "max_iter": 100
+    },
+    "best_score_rule_cv_ap": 0.3708229959685063
+  },
+  "stack": {
+    "params": "stacking(logreg,rf,hgb,mlp) -> logreg meta",
+    "cv_average_precision": 0.36739432393594534
+  }
+}

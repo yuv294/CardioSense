@@ -1,0 +1,158 @@
+{
+  "models": {
+    "logreg": {
+      "train_auroc": 0.739,
+      "cv_auroc": 0.734,
+      "test_auroc": 0.697,
+      "gap": 0.042
+    },
+    "rf": {
+      "train_auroc": 0.747,
+      "cv_auroc": 0.722,
+      "test_auroc": 0.68,
+      "gap": 0.066
+    },
+    "hgb": {
+      "train_auroc": 0.754,
+      "cv_auroc": 0.72,
+      "test_auroc": 0.689,
+      "gap": 0.065
+    },
+    "mlp": {
+      "train_auroc": 0.756,
+      "cv_auroc": 0.735,
+      "test_auroc": 0.693,
+      "gap": 0.063
+    },
+    "stack": {
+      "train_auroc": 0.749,
+      "cv_auroc": null,
+      "test_auroc": 0.696,
+      "gap": 0.054
+    }
+  },
+  "facts": {
+    "logreg": {
+      "C": 0.001,
+      "iterations": 10,
+      "top_weights": [
+        [
+          "ln_age",
+          0.112
+        ],
+        [
+          "age",
+          0.108
+        ],
+        [
+          "age_sq",
+          0.103
+        ],
+        [
+          "bp_age",
+          0.098
+        ],
+        [
+          "chol_age",
+          0.083
+        ],
+        [
+          "smoker_pack",
+          0.079
+        ],
+        [
+          "glucose",
+          0.076
+        ],
+        [
+          "male_x_ln_age",
+          0.063
+        ],
+        [
+          "cigsPerDay",
+          0.062
+        ],
+        [
+          "male_x_ln_sbp",
+          0.061
+        ]
+      ]
+    },
+    "rf": {
+      "params": {
+        "max_depth": 3,
+        "max_features": "sqrt",
+        "min_samples_leaf": 80,
+        "n_estimators": 400
+      },
+      "mean_depth": 3.0,
+      "mean_leaves": 7.5,
+      "top_importances": [
+        [
+          "bp_age",
+          0.188
+        ],
+        [
+          "ln_age",
+          0.114
+        ],
+        [
+          "age_sq",
+          0.113
+        ],
+        [
+          "age",
+          0.112
+        ],
+        [
+          "chol_age",
+          0.09
+        ],
+        [
+          "ln_sbp",
+          0.054
+        ],
+        [
+          "sysBP",
+          0.048
+        ],
+        [
+          "pulse_pressure",
+          0.048
+        ]
+      ]
+    },
+    "hgb": {
+      "rounds_run": 98,
+      "max_rounds": 300,
+      "params": {
+        "l2_regularization": 0.0,
+        "learning_rate": 0.03,
+        "max_depth": 2,
+        "max_leaf_nodes": 7,
+        "min_samples_leaf": 100
+      }
+    },
+    "mlp": {
+      "hidden": [
+        16
+      ],
+      "alpha": 1.0,
+      "epochs_run": 30,
+      "max_iter": 30,
+      "n_weights": 529
+    },
+    "stack": {
+      "meta_weights": {
+        "logreg": 3.112,
+        "rf": 1.055,
+        "hgb": -0.752,
+        "mlp": 2.361
+      }
+    }
+  },
+  "framingham": {
+    "train": 0.721,
+    "test": 0.703
+  }
+}
