@@ -7,6 +7,7 @@ const NAV = [
   { to: "/patient", label: "Assess", end: true },
   { to: "/patient/history", label: "History" },
   { to: "/patient/learn", label: "Learn" },
+  { to: "/patient/evidence", label: "Evidence" },
 ];
 
 export default function PatientShell() {
@@ -16,7 +17,7 @@ export default function PatientShell() {
       <header className="border-b border-fg/10 bg-surface">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
           <Wordmark className="text-lg" />
-          <nav className="flex items-center gap-1">
+          <nav className="flex items-center gap-1 overflow-x-auto">
             {NAV.map((n) => (
               <NavLink key={n.to} to={n.to} end={n.end}
                 className={({ isActive }) =>

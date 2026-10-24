@@ -11,3 +11,6 @@ frontend/.vite/
 data/processed/
 # OS
 .DS_Store
+
+# NHANES raw files are large; regenerate with scripts/nhanes_download.py
+data/raw/nhanes/

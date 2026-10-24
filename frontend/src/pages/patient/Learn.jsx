@@ -4,6 +4,7 @@ export default function Learn() {
   return (
     <div className="max-w-3xl">
       <h1 className="font-display text-4xl font-extrabold tracking-tight">What the numbers mean</h1>
+      <p className="mt-3 text-fg/65">Plain-language notes on every input and on how to read your result.</p>
       <dl className="mt-8 divide-y divide-fg/10 border-y border-fg/10">
         {GLOSSARY.map((g) => (
           <div key={g.term} className="grid gap-1 py-6 sm:grid-cols-[14rem_1fr] sm:gap-8">

@@ -1,140 +1,84 @@
-# CardioSense — Project Synopsis (revised)
+# CardioSense v2: project synopsis
 
 **Submitted by:** Yuvika Das · Rajapurohitham Sahana · Rosanne Chugh
 
 ## Abstract
 
-Cardiovascular disease is a leading cause of death worldwide, and identifying
-at-risk individuals early allows preventive intervention. Established clinical
-risk calculators are rule-based and were derived from specific cohorts, and may
-mis-estimate risk in populations unlike their derivation sample. CardioSense
-develops and fairly compares several machine-learning models — an interpretable
-Random Forest, a gradient-boosted ensemble, a neural network, and a logistic-
-regression reference — for predicting an individual's 10-year risk of coronary
-heart disease (CHD) from routinely available clinical attributes. All models are
-benchmarked against a published rule-based score (the Framingham Risk Score), and
-the best-calibrated model is delivered through a Flask REST API and a React web
-interface. The system is trained and validated on the Framingham Heart Study
-teaching cohort (4,240 participants).
+Clinical risk equations such as the Framingham Risk Score (FRS) and the ACC/AHA Pooled
+Cohort Equations (PCE) are the standard for estimating ten-year cardiovascular risk. Our
+first version found, like much of the literature, that machine learning (ML) trained on
+the same classic risk factors could not beat the FRS. Version 2 asks when ML *does* add
+value. We train four model families (elastic-net logistic regression with splines, random
+forest, monotone-constrained gradient boosting, bagged neural network) and their ensemble
+on two cohorts: the Framingham Heart Study teaching dataset (the FRS's home ground; 10-year
+first coronary event; 1,200 events) and NHANES 1999–2010 linked to national death records
+(an external, multi-ethnic, modern cohort with kidney, glycaemic, inflammatory and social
+markers; 10-year cardiovascular death; 387 deaths). On Framingham, ML ties the published
+FRS in discrimination (nested-CV ΔAUROC +0.003) but is far better calibrated (the FRS
+over-predicts by ~50%). On NHANES, the ensemble beats the published PCE on a locked test
+set (AUROC 0.848 vs 0.828, Δ +0.020, 95% CI +0.002 to +0.038) and in nested cross-validation over all 387 deaths (Δ +0.024, 95% CI +0.013 to +0.035); an
+ablation attributes the gain to inputs the equations omit (urine albumin, eGFR, hs-CRP,
+waist, income and education). The models are served through a Flask API and a React web
+app with exact Shapley explanations, a what-if simulator and batch scoring.
 
-## 1. Introduction
+## 1. Problem
 
-### 1.1 Overview
-CardioSense is an end-to-end machine-learning application for 10-year CHD risk
-estimation. It spans data preprocessing, model training, honest evaluation
-against a clinical baseline, and deployment as a clinician- and patient-facing
-web application.
+Can machine learning improve ten-year cardiovascular risk estimation over the published
+equations clinicians use, and if so, where does the improvement come from: the algorithm,
+refitting to the population, or new information?
 
-### 1.2 Motivation
-Cardiovascular disease accounts for roughly a third of global deaths. Estimating
-an individual's future risk from information available at a routine visit — age,
-sex, blood pressure, cholesterol, smoking, diabetes, BMI — lets people and
-clinicians act before an event occurs. The question this project asks is whether
-modern machine learning improves on the rule-based calculators already in use.
+## 2. Literature
 
-### 1.3 Problem Statement
-Rule-based cardiovascular risk calculators are limited by the cohorts and eras
-they were derived from, and clinician-facing tools that make a personalised
-estimate actionable are not always available. There is a need for an ML pipeline
-that (i) predicts individual 10-year CHD risk from routine attributes, (ii) is
-honestly benchmarked against an established clinical score, and (iii) is
-delivered through an accessible web interface with transparent, calibrated
-output.
+* Published equations: D'Agostino 2008 (FRS), Goff 2014 (PCE), Khan 2024 (AHA PREVENT, which
+  adds eGFR, urine albumin and HbA1c).
+* ML vs regression: Christodoulou 2019 (systematic review: no average benefit of ML over
+  logistic regression); Weng 2017 and Alaa 2019 (ML gains with very large data and many
+  variables); Grinsztajn 2022 (tree ensembles lead on tabular data).
+* Methods: van Houwelingen 2007 (landmarking), Riley 2020 (sample size), Van Calster 2019
+  (calibration), Vickers & Elkin 2006 (decision curves), Collins 2024 (TRIPOD+AI reporting).
 
-### 1.4 Objectives
-- Preprocess the Framingham cohort with a leak-free, split-first pipeline.
-- Train and tune four models spanning interpretable and deep-learning paradigms.
-- Implement the Framingham Risk Score as a rule-based baseline.
-- Evaluate all models on a locked test set using discrimination (AUROC, AUPRC),
-  calibration (Brier score, calibration curve), and bootstrap confidence intervals.
-- Deploy the best-calibrated model via a Flask API and a React web app with
-  per-prediction explanations and a downloadable report.
+## 3. Data
 
-## 2. Literature Review
+| | Framingham teaching dataset | NHANES 1999–2010 + NCHS linked mortality |
+|---|---|---|
+| People / rows | 4,199 / 10,642 visits (landmarking) | 13,702 |
+| Outcome | First CHD event ≤ 10 years | CVD death ≤ 10 years |
+| Events | 1,200 (11.3%) | 387 (2.8%) |
+| Inputs | 12 (chosen by ablation) | 21, 8 optional |
+| Exclusions | Prior CHD or stroke | Prior CVD; age outside 40–79 |
 
-Machine learning for cardiovascular risk prediction has been studied widely.
-Comparative studies (e.g. against the Framingham and ACC/AHA pooled-cohort
-equations) report that ML models often match, but do not consistently beat,
-well-constructed clinical risk scores on standard tabular risk factors —
-particularly once calibration, not just discrimination, is considered. Random
-Forests (Breiman, 2001) and gradient-boosted trees are strong tabular baselines;
-recent work questions whether neural networks offer an advantage on tabular
-clinical data. This motivates a careful, calibration-aware comparison rather than
-an accuracy-only claim.
+Competing deaths are labelled as no event; rows censored early for other reasons are dropped.
 
-## 3. Proposed Methodology
+## 4. Method
 
-### 3.1 Pipeline
-Data preprocessing → model training (CV-tuned) → evaluation against the
-rule-based baseline on a locked test set → deployment.
+1. Participant-level 80/20 split (test set opened once), grouped and stratified.
+2. Grouped 5-fold CV tuning on log-loss with the one-standard-error rule; out-of-fold Platt
+   recalibration; unweighted ensemble; served model chosen on CV only.
+3. Baselines: published FRS/PCE, the same recalibrated, and the same formula refitted.
+4. Evaluation: AUROC, AUPRC, Brier, calibration intercept/slope, E/O, decision curves,
+   subgroups; participant-level bootstrap with paired differences; nested CV over the whole
+   cohort; input-group ablation.
 
-### 3.2 Data Preprocessing
-- Stratified 80/20 split performed **first**; the test set is locked.
-- Imputation (median/mode) and standardisation are fit on the training set only
-  and applied to the test set, preventing leakage.
-- Defaults derived from training data are stored so the live API fills missing
-  optional inputs consistently and discloses every assumed field.
+## 5. Results
 
-### 3.3 Models
-Logistic Regression, Random Forest, HistGradientBoosting, and an MLP neural
-network, each tuned with 5-fold stratified cross-validation on the training set,
-optimising average precision to respect the ~15% class imbalance, plus a stacked
-ensemble. Overfitting is controlled in the code: each grid includes very simple
-settings and the simplest setting within one standard error of the best is chosen.
+See README.md for the full tables. In short:
 
-### 3.4 Rule-Based Baseline
-The Framingham General CVD risk score (office/BMI model, D'Agostino 2008) is
-computed directly from the cohort attributes and scored on the same locked test
-set, giving a like-for-like benchmark.
+* **Framingham:** discrimination tie with the FRS (nested CV +0.003, CI −0.003 to +0.009);
+  large calibration gain (E/O 1.48 → 1.00; Brier −0.007, CI excludes 0); restricting to
+  the FRS's own inputs costs nothing.
+* **NHANES:** ensemble beats the PCE (test +0.020, p = 0.03); nested CV +0.024 (CI +0.013 to +0.035), and +0.031 over the refitted PCE;
+  using only the PCE's inputs costs 0.021–0.031 AUROC in CV.
+* No model overfits materially: train-to-test AUROC drops are at most 0.03.
 
-### 3.5 Evaluation
-AUROC, AUPRC, Brier score, calibration curves, and 2,000-sample bootstrap
-confidence intervals. The served model is isotonically calibrated so its output
-is a trustworthy probability. An operating threshold is selected on training
-out-of-fold predictions for a target sensitivity.
+## 6. System
 
-### 3.6 System Architecture (three-tier)
-- **Model layer:** scikit-learn pipeline producing serialized artifacts.
-- **Backend:** Flask REST API (`/predict`, `/schema`, `/metrics`, `/health`).
-- **Frontend:** React SPA — risk form, dashboard, history, learning centre,
-  and a client-side PDF report.
+Flask REST API (`/models`, `/schema`, `/predict`, `/batch`, `/evidence`) serving both
+calculators; React SPA with patient and clinician portals, evidence dashboard, PDF report,
+CSV batch scoring; Docker image and Render blueprint; pytest suite.
 
-## 4. Tools & Dataset
+## 7. Limitations and future work
 
-Python, scikit-learn, Flask, React (Vite, Tailwind), Recharts, jsPDF. Dataset:
-Framingham Heart Study teaching cohort — 4,240 participants, 15 predictors,
-binary 10-year CHD outcome.
-
-## 5. Results (locked test set, n = 848)
-
-No ML model clearly beat the Framingham baseline; the served model (calibrated
-logistic regression on 31 features, AUROC 0.695) and the rule-based score (AUROC
-0.703) have overlapping confidence intervals (paired difference −0.006, 95% CI
-−0.024 to +0.013). In repeated cross-validation on the training data the model is
-slightly ahead (+0.013, CI +0.003 to +0.023), the only gain coming from giving it
-the structure of the Framingham equation; other ideas (missing flags, the score as
-a feature or offset, boosting) gave nothing, and an ablation shows the ceiling of
-about 0.73 AUROC is set by the inputs. Calibration improved the served model's
-Brier score (0.212 → 0.123), and the published score under-predicts risk in this
-cohort. This tie-to-small-edge result is consistent with the literature and is
-reported transparently.
-
-## 6. Expected Outcomes & Applications
-
-A reproducible, leak-free pipeline; four tuned models with an honest clinical
-benchmark; a calibrated, explainable risk estimator; and a deployed web
-application. Applicable to preventive-health screening and as a teaching example
-of rigorous model evaluation.
-
-## 7. Future Scope
-
-External validation on an independent cohort; incorporation of additional
-predictors (HDL/LDL, family history; candidate public sources are the BioLINCC
-Framingham teaching dataset and NHANES with CDC linked mortality); time-to-event
-modelling; and recalibration for non-Framingham populations.
-
-## 8. Limitations
-
-Not clinically validated; trained on a single historical cohort; optional inputs
-imputed when blank; browser-local history only; a risk estimate is not a
-diagnosis.
+American cohorts only; NHANES outcome is fatal events only; family history from 2005;
+no survey weights; associations not causal effects. Future: external validation in a
+non-US cohort, competing-risk survival models, the PREVENT equations as a third baseline,
+and fairness analysis by race and income.

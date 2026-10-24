@@ -1,0 +1,46 @@
+{
+  "visits_total": 11627,
+  "participants_total": 4434,
+  "visits_after_excluding_prior_chd_or_stroke": 10668,
+  "competing_deaths_labelled_0": 831,
+  "dropped_censored_before_10y": 26,
+  "by_exam": {
+    "1": {
+      "rows": 4199,
+      "event_rate": 0.0891
+    },
+    "2": {
+      "rows": 3592,
+      "event_rate": 0.1189
+    },
+    "3": {
+      "rows": 2851,
+      "event_rate": 0.14
+    }
+  },
+  "all": {
+    "rows": 10642,
+    "participants": 4199,
+    "events": 1200,
+    "event_rate": 0.1128
+  },
+  "train": {
+    "rows": 8514,
+    "participants": 3360,
+    "events": 955,
+    "event_rate": 0.1122
+  },
+  "test": {
+    "rows": 2128,
+    "participants": 839,
+    "events": 245,
+    "event_rate": 0.1151
+  },
+  "missing_share": {
+    "BPMeds": 0.0481,
+    "cigsPerDay": 0.0066,
+    "totChol": 0.0338,
+    "HDL": 0.7509,
+    "BMI": 0.0039
+  }
+}
